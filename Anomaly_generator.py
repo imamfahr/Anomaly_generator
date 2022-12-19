@@ -35,6 +35,7 @@ from docx.shared import Pt
 MA_report = []
 MTBF_report = []
 MTTR_report = []
+PM_report = []
 
 
 
@@ -46,7 +47,7 @@ MTR_label = ''
 
 
 window = Tk()
-window.title('Anomaly Report Generator v01.1.1')
+window.title('Anomaly Report Generator v01.2.2')
 
 
 window.geometry('810x500')
@@ -315,6 +316,8 @@ def generate_docx():
     PDAM = All_KPI.groupby(['fleet desc'])['PDAM\n08020\n09020'].sum() #T
     PMD = All_KPI.groupby(['fleet desc'])['PMD\n(08)'].sum() #L
     UMD = All_KPI.groupby(['fleet desc'])['UMD\n(09)'].sum() #M
+    POMR = All_KPI.groupby(['fleet desc'])['POMR \n&\nPOMN\n(18+28)'].sum()#Q
+    UOMR = All_KPI.groupby(['fleet desc'])['UOMR\n&\nUOMN\n(19+29)'].sum()#R
     EngOn = All_KPI.groupby(['fleet desc'])['Total\nEng On\n(SMU Hrs)'].sum() #V
     nFail = All_KPI.groupby(['fleet desc'])['Number of\nFailures\nPeriod'].sum() #W
     nFailsum = All_KPI.groupby(['fleet desc'])['Number of\nFailures\nPeriod'].sum()
@@ -325,16 +328,21 @@ def generate_docx():
     fail_hours = All_KPI.groupby(['fleet desc'])['Failure Hours'].sum()
 
 
-    '''Do the math'''
+    '''Do the math
+    
+    -- new branch to add pm
+    '''
     MA = ((PWT+SWT+IODOn+IODOff+EODOn+EODOff+PDAM)/(PWT+SWT+IODOn+IODOff+EODOn+EODOff+PDAM+PMD+UMD-PDAM).replace({0:np.nan})).fillna(0)
     MTBF =((EngOn)/(nFail).replace({0:np.nan})).fillna(EngOn)
     MTTR = ((fail_hours)/(nFailsum).replace({0:np.nan})).fillna(fail_hours)
+    PM = ((PMD+POMR)/(PMD+UMD+POMR+UOMR-PDAM).replace({0:np.nan})).fillna(0)
 
     '''Combined all KPI'''
-    Anomali_db = pd.merge(MA.to_frame(),MTBF.to_frame(), on='fleet desc', how= 'outer')
-    complete_anomali = pd.merge(Anomali_db, MTTR.to_frame(), on='fleet desc', how= 'outer')
-    complete_anomali.rename(columns = {'0_x':'MA','0_y':'MTBF'},inplace=True)
-    complete_anomali.columns = ['MA','MTBF','MTTR']
+    Anomali_db = pd.merge(MA.to_frame(),MTBF.to_frame(), on='fleet desc', how= 'outer').merge(MTTR.to_frame(), on='fleet desc', how= 'outer')
+    #Anomali_db = pd.merge(Anomali_db1,MTTR.to_frame(), on='fleet desc', how= 'outer')
+    complete_anomali = pd.merge(Anomali_db, PM.to_frame(), on='fleet desc', how= 'outer')
+    #complete_anomali.rename(columns = {'0_x':'MA','0_y':'MTBF'},inplace=True)
+    complete_anomali.columns = ['MA','MTBF','MTTR','PM']
     '''round by 2 decimals'''
     complete_anomali['MTBF'] = complete_anomali['MTBF'].apply(lambda x: round(x,2))
     complete_anomali['MTTR'] = complete_anomali['MTTR'].apply(lambda x: round(x,2))
@@ -462,6 +470,60 @@ def generate_docx():
         
     }
         MA_report.append(structured_MA)
+    
+    '''Processing PM'''
+
+
+    red_PM_this_week = complete_KPI['PM'][complete_KPI['PM']<0.6].dropna()
+    PM_df= PDTD_complete.loc[PDTD_complete['fleet desc'].isin(red_PM_this_week.index)]
+
+
+    desc_PM= PM_df.loc[:,('Unit')]+' '+PM_df.loc[:,('Reported Fault/Job Description')]+' ('+PM_df.loc[:,('Period\nEvent\nMaint.\nDuration')].values.astype(str)+" Hours)"
+    PM_df.groupby(['Unit','Event\nID','Period\nEvent\nMaint.\nDuration'])['Reported Fault/Job Description'].apply(lambda x: ', '.join(x.astype(str))).reset_index()
+    PM_df_new = PM_df.merge(desc_MA.rename('PM Anomali'),left_index=True, right_index=True).sort_values(['Period\nEvent\nMaint.\nDuration'],ascending=False)
+    PM_report_fail_df = PM_df.groupby(['Unit','Event\nID','Activity','fleet desc','Period\nEvent\nMaint.\nDuration'])['Reported Fault/Job Description'].apply(lambda x: ','.join(x.astype(str))).reset_index()
+    PM_report_fail_df['PM Anomali'] = PM_report_fail_df.loc[:,('Unit')]+' '+PM_report_fail_df.loc[:,('Reported Fault/Job Description')]+' ('+PM_report_fail_df.loc[:,('Period\nEvent\nMaint.\nDuration')].values.astype(str)+" Hours)"
+
+
+    '''PM Report Template'''
+
+    PM_report = []
+
+        
+        
+    for i in red_PM_this_week.index:
+        Scheduled_maintenance = []
+        Unschedule_maintenance = []
+        
+        '''Processing MA df scheduled & unscheduled''' 
+        
+        PM_df_sched = PM_report_fail_df[((PM_report_fail_df.Activity =='08-Planned Maintenance (PMD)')&(PM_report_fail_df['fleet desc'] ==i)&(PM_report_fail_df['Period\nEvent\nMaint.\nDuration']>downtime_limit))].sort_values(['Period\nEvent\nMaint.\nDuration'],ascending=False)
+        PM_df_unsched = PM_report_fail_df[((PM_report_fail_df.Activity =='09-Unplanned Maintenance (UMD)')&(PM_report_fail_df['fleet desc'] ==i)&(PM_report_fail_df['Period\nEvent\nMaint.\nDuration']>downtime_limit))].sort_values(['Period\nEvent\nMaint.\nDuration'],ascending=False)
+        
+        Scheduled_fleet_df = PM_df_sched['PM Anomali']
+        Unscheduled_fleet_df = PM_df_unsched['PM Anomali'] 
+        
+        for x in Scheduled_fleet_df:
+            Scheduled_maintenance.append(x)
+        
+        for x in Unscheduled_fleet_df:
+            Unschedule_maintenance.append(x)
+        
+        
+        structured_PM = {
+            
+        
+        'Fleet':i,
+        'PM':red_PM_this_week[i],
+        'Total Unit':All_KPI.groupby('fleet desc').count()['Unit'][i],
+        'UMD total hours':round(All_KPI.groupby('fleet desc').sum()['UMD\n(09)'][i],2),
+        'PMD total hours':All_KPI.groupby('fleet desc').sum()['PMD\n(08)'][i],
+        'PDAM total hours':All_KPI.groupby('fleet desc').sum()['PDAM\n08020\n09020'][i],
+        'Scheduled maintenance' : Scheduled_maintenance,
+        'Unscheduled maintenance' : Unschedule_maintenance
+        
+    }
+        PM_report.append(structured_PM)
         
 
     '''Processing MTTRF'''
@@ -557,6 +619,12 @@ def generate_docx():
     shading_elm10 = parse_xml(r'<w:shd {} w:fill="FFC000"/>'.format(nsdecls('w')))
     shading_elm11 = parse_xml(r'<w:shd {} w:fill="FFC000"/>'.format(nsdecls('w')))
     shading_elm12 = parse_xml(r'<w:shd {} w:fill="FFC000"/>'.format(nsdecls('w')))
+
+    '''PM'''
+    shading_elm13 = parse_xml(r'<w:shd {} w:fill="1616F6"/>'.format(nsdecls('w')))
+    shading_elm14 = parse_xml(r'<w:shd {} w:fill="1616F6"/>'.format(nsdecls('w')))
+    shading_elm15 = parse_xml(r'<w:shd {} w:fill="1616F6"/>'.format(nsdecls('w')))
+    shading_elm16 = parse_xml(r'<w:shd {} w:fill="1616F6"/>'.format(nsdecls('w')))
 
 
 
@@ -718,6 +786,72 @@ def generate_docx():
 
     '''repeat header'''
     set_repeat_table_header(table_MTTR.rows[0])
+
+    
+    
+    '''Preventative Maintenance'''
+    Anomali_report_full.add_paragraph(text=f'Fleet with PM Below Target {site}').alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+
+    '''
+    formatting PM table
+    '''
+
+    table_PM = Anomali_report_full.add_table(rows=1,cols=4)
+    table_PM.style = 'Table Grid'
+
+
+
+    hdr_cells_PM = table_PM.rows[0].cells
+    for cell in hdr_cells_PM:
+        cell.height = Mm(30)
+        
+    hdr_cells_PM[0].text = 'Fleet/Model'
+    hdr_cells_PM[1].text = f'PM week {nPeriod}'
+    hdr_cells_PM[2].text = 'Target'
+    hdr_cells_PM[3].text = 'Comments on Non-Compliance'
+
+    '''cells shading'''
+    hdr_cells_PM[0]._tc.get_or_add_tcPr().append(shading_elm13)
+    hdr_cells_PM[1]._tc.get_or_add_tcPr().append(shading_elm14)
+    hdr_cells_PM[2]._tc.get_or_add_tcPr().append(shading_elm15)
+    hdr_cells_PM[3]._tc.get_or_add_tcPr().append(shading_elm16)
+
+    '''repeat header'''
+    set_repeat_table_header(table_PM.rows[0])
+
+
+    for i in PM_report:
+        
+        TOU_PM = i.get('Total Unit')
+        PMD_PM = i.get('PMD total hours')
+        UMD_PM = i.get('UMD total hours')
+        PDAM_PM = i.get('PDAM total hours')
+        
+        row_cells_PM = table_PM.add_row().cells
+        row_cells_PM[0].text = i.get('Fleet')
+        row_cells_PM[1].text = "{:.2%}".format(i.get('PM'))
+        row_cells_PM[2].text = "60%"
+        
+        sch = i.get('Scheduled maintenance')
+        Unsch = i.get('Unscheduled maintenance')
+        
+        Scheduled_maintenance = '\n'.join([c for c in sch[1:]])
+        Unscheduled_maintenance = '\n'.join([c for c in Unsch[1:]])
+        
+        non_compliance = f'Number of Units = {TOU_PM} \nPMD Total = {PMD_PM} \nUMD Total= {UMD_PM} \nPDAM Total hours= {PDAM_PM}\n'
+        #MA_anomalies = f'Scheduled maintenance :\n{Scheduled_maintenance}\n\nUnscheduled maintenance :\n{Unscheduled_maintenance}'
+
+        row_cells_PM[3].add_paragraph(text=non_compliance)
+        row_cells_PM[3].add_paragraph('Scheduled maintenance :\n')
+        for j in sch:
+            row_cells_PM[3].add_paragraph(j,style='List Bullet')
+        row_cells_PM[3].add_paragraph('\nUnscheduled maintenance :\n')
+        for k in Unsch:
+            row_cells_PM[3].add_paragraph(k,style='List Bullet')    
+
+    set_col_widths(table_PM)
+    Anomali_report_full.add_page_break()
 
 
     for i in MTTR_report:
