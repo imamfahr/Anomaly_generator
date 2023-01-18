@@ -789,6 +789,35 @@ def generate_docx():
 
     
     
+    
+
+    for i in MTTR_report:
+        
+        TOU_MTTRF = i.get('Total Unit')
+        Hours_Fail_MTTRF = i.get('Hours Maintenance with Failure is Yes')
+        COF_MTTRF = i.get('Count of Failures')
+        DBF_MTTRF = i.get('Detail Breakdown with Failure is Yes')
+        detail_breakdown_MTTRF = '\n\n'.join(map(str,DBF_MTTRF))
+        
+        #join([c for c in DBF_MTTRF[0:]])
+            
+        comment_MTTR = f'Number of Units = {TOU_MTTRF} \nHours maintenance with is Failure Yes ={Hours_Fail_MTTRF} \nCount of failures/Is Failure Yes = {COF_MTTRF} \n\n\n Detail breakdown with failure is yes:\n'
+        
+        MTTR_value = str(i.get('MTTR'))
+        
+        row_cells = table_MTTR.add_row().cells
+        row_cells[0].text = i.get('Fleet')
+        row_cells[1].text = f'MTTRF = {MTTR_value}'
+        row_cells[2].text = '6 Hours'
+        
+        row_cells[3].add_paragraph(comment_MTTR)
+        for j in DBF_MTTRF:
+            row_cells[3].add_paragraph(j,style='List Bullet')
+            
+
+    set_col_widths(table_MTTR)
+    Anomali_report_full.add_page_break()
+
     '''Preventative Maintenance'''
     Anomali_report_full.add_paragraph(text=f'Fleet with PM Below Target {site}').alignment = WD_ALIGN_PARAGRAPH.CENTER
 
@@ -853,33 +882,6 @@ def generate_docx():
     set_col_widths(table_PM)
     Anomali_report_full.add_page_break()
 
-
-    for i in MTTR_report:
-        
-        TOU_MTTRF = i.get('Total Unit')
-        Hours_Fail_MTTRF = i.get('Hours Maintenance with Failure is Yes')
-        COF_MTTRF = i.get('Count of Failures')
-        DBF_MTTRF = i.get('Detail Breakdown with Failure is Yes')
-        detail_breakdown_MTTRF = '\n\n'.join(map(str,DBF_MTTRF))
-        
-        #join([c for c in DBF_MTTRF[0:]])
-            
-        comment_MTTR = f'Number of Units = {TOU_MTTRF} \nHours maintenance with is Failure Yes ={Hours_Fail_MTTRF} \nCount of failures/Is Failure Yes = {COF_MTTRF} \n\n\n Detail breakdown with failure is yes:\n'
-        
-        MTTR_value = str(i.get('MTTR'))
-        
-        row_cells = table_MTTR.add_row().cells
-        row_cells[0].text = i.get('Fleet')
-        row_cells[1].text = f'MTTRF = {MTTR_value}'
-        row_cells[2].text = '6 Hours'
-        
-        row_cells[3].add_paragraph(comment_MTTR)
-        for j in DBF_MTTRF:
-            row_cells[3].add_paragraph(j,style='List Bullet')
-            
-
-    set_col_widths(table_MTTR)
-    
 
     
 
