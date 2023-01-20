@@ -52,7 +52,7 @@ window.title('Anomaly Report Generator v01.2.2')
 
 window.geometry('810x500')
 
-thiess_img = Image.open('img/ThiessIcon4.png')
+thiess_img = Image.open('ThiessIcon4.png')
 resized = thiess_img.resize((130,40))
 test = ImageTk.PhotoImage(resized)
 
